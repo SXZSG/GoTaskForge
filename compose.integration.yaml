@@ -1,0 +1,8 @@
+# Use only for local integration tests; DB/Redis stay bound to loopback.
+services:
+  mysql:
+    ports:
+      - "127.0.0.1:3307:3306"
+  redis:
+    ports:
+      - "127.0.0.1:6380:6379"

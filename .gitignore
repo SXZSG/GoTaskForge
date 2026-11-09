@@ -1,0 +1,46 @@
+# ---- secrets / local configuration ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- runtime data (job snapshots, MySQL/Redis volumes) ----
+/data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- build artifacts ----
+/bin/
+/dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# ---- logs and temporary files ----
+*.log
+logs/
+tmp/
+*.tmp
+*.swp
+*~
+
+# ---- test/coverage output ----
+/coverage.out
+coverage.html
+*.coverprofile
+
+# ---- editor / OS noise ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+node_modules/
+
+# ---- local-only notes that must never be published ----
+/private/
+*.local.md

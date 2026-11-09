@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoTaskForge · AI Infra Gateway</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1120;--panel:#151f33;--line:#2b3850;--txt:#e8effc;--muted:#9bacca;--accent:#4fcab5}
+*{box-sizing:border-box}body{margin:0;font:15px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(ellipse at top right,#142b42,#0b1120 65%);color:var(--txt)}
+main{max-width:1120px;margin:0 auto;padding:38px 24px 60px}header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:32px}h1{margin:0;font-size:30px;letter-spacing:-.03em}h1 span{color:var(--accent)}p{margin:8px 0 0;color:var(--muted)}.pill{padding:6px 12px;background:#1c3440;border-radius:30px;color:#8bf2da;font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:22px 0}.stat,.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px}.stat strong{display:block;font-size:28px;font-variant-numeric:tabular-nums}.stat span{color:var(--muted);font-size:13px}.two{display:grid;grid-template-columns:1fr 1.4fr;gap:18px;margin-top:18px}.row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}h2{font-size:17px;margin:0 0 14px}label{display:block;color:var(--muted);font-size:13px;margin:12px 0 6px}input,textarea{width:100%;font:inherit;background:#0d172a;border:1px solid #40506a;border-radius:9px;color:var(--txt);padding:11px 13px}textarea{min-height:190px;resize:vertical}button{font:inherit;background:var(--accent);color:#082326;border:0;border-radius:9px;padding:10px 17px;font-weight:700;cursor:pointer}button.secondary{background:#263750;color:#d8e4f7}button.danger{background:#58303b;color:#ffb8c5}button:disabled{opacity:.5;cursor:not-allowed}.tiny{font-size:12px;padding:4px 10px}.help{font-size:12px;color:var(--muted)}.status{border-radius:20px;padding:3px 9px;font-size:12px;display:inline-block;background:#26354b}.succeeded{color:#72ebbb}.failed{color:#ff9898}.running{color:#7cc8ff}.queued{color:#f2c66d}.cancelled{color:#b4bacc}table{border-collapse:collapse;width:100%;font-size:13px}td,th{text-align:left;padding:12px 8px;border-bottom:1px solid #2a3850;vertical-align:top}th{color:var(--muted);font-weight:500}td:first-child{max-width:200px;overflow-wrap:anywhere}#detail{white-space:pre-wrap;overflow-wrap:anywhere;background:#0d172a;border-radius:9px;padding:12px;max-height:260px;overflow:auto;color:#cbd9ef}#notice{min-height:20px;margin-top:12px;color:#9cebd8}code{color:#bbdfed}@media(max-width:760px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.two{grid-template-columns:1fr}main{padding:20px 14px}h1{font-size:23px}.card{padding:15px}table{font-size:12px}}
+</style></head>
+<body><main>
+<header><div><h1>Go<span>TaskForge</span></h1><p>Go 异步任务调度 + AI 推理网关 · Worker Pool · MySQL · Redis · SSE</p></div><div class="pill" id="connection">正在检测服务…</div></header>
+<div class="card"><div class="row"><div><strong>API 认证</strong><div class="help">如果启动时设置了 API_KEY，请在此填写。密钥仅保留在当前页面内存中。</div></div><div style="min-width:230px;flex:1;max-width:350px"><input id="key" type="password" autocomplete="off" placeholder="X-API-Key（本地模式可留空）"></div><button class="secondary" id="refresh">刷新</button></div></div>
+<section class="grid"><div class="stat"><strong id="count-total">—</strong><span>总任务</span></div><div class="stat"><strong id="count-queued">—</strong><span>排队中</span></div><div class="stat"><strong id="count-running">—</strong><span>执行中</span></div><div class="stat"><strong id="count-succeeded">—</strong><span>已成功</span></div></section>
+<section class="two"><div class="card"><h2>新建 AI 任务</h2><label for="prompt">Prompt</label><textarea id="prompt" maxlength="4000" placeholder="例如：介绍 Go 中的 goroutine 和 channel 有什么区别"></textarea><div class="row" style="margin-top:12px"><span class="help">任务异步处理，默认 Mock 无需大模型密钥</span><button id="submit">提交任务</button></div><div id="notice" role="status"></div><h2 style="margin-top:22px">任务详情</h2><div id="detail" class="help">点击右侧任务可查看结果</div></div><div class="card"><div class="row"><h2>最近任务</h2><button id="reload" class="secondary tiny">更新列表</button></div><div style="overflow:auto"><table><thead><tr><th>任务 ID / Prompt</th><th>状态</th><th>次数</th><th>操作</th></tr></thead><tbody id="jobs"><tr><td colspan="4">正在读取…</td></tr></tbody></table></div></div></section>
+
+<section class="card" style="margin-top:20px">
+  <div class="row"><h2>LLM 推理网关（v3 新增）</h2><button class="secondary tiny" id="reload-gateway">刷新后端状态</button></div>
+  <div class="help">前置 Go 网关将请求转发给多个 OpenAI-compatible 模型服务；展示的数字来自实际 HTTP 请求，不是 GPU 计算指标。</div>
+  <div id="backend-status" class="help" style="margin:10px 0 16px">等待读取后端…</div>
+  <label for="model-name">模型名（与上游模型保持一致）</label><input id="model-name" value="local-demo" maxlength="120" />
+  <label for="chat-prompt">在线请求</label><textarea id="chat-prompt" style="min-height:85px" placeholder="例如：请说明 Go 如何管理多个推理后端"></textarea>
+  <div class="row" style="margin-top:12px"><label style="margin:0"><input id="chat-stream" type="checkbox" checked style="width:auto;vertical-align:middle"> SSE 流式输出</label><button id="chat-send">发送推理请求</button></div>
+  <div id="chat-notice" class="help" style="margin-top:9px" role="status"></div>
+  <div id="chat-output" style="margin-top:12px;white-space:pre-wrap;overflow-wrap:anywhere;background:#0d172a;border-radius:9px;padding:12px;min-height:55px">等待请求</div>
+</section>
+<p class="help" style="margin-top:24px">本演示面板不上传任何密钥至第三方。真实 API 调用可能产生费用。请勿将无认证的服务开放到公网。</p>
+</main>
+<script>
+(() => {
+  const el = id => document.getElementById(id);
+  const notice = text => el('notice').textContent = text;
+  const headers = () => { const h = {}; if(el('key').value) h['X-API-Key'] = el('key').value; return h; };
+  async function request(path, options={}) {
+    const response = await fetch(path, { ...options, headers:{...headers(), ...(options.headers||{})}, cache:'no-store' });
+    const body = await response.json();
+    if(!response.ok) throw new Error(body.error?.message || body.error || `HTTP ${response.status}`);
+    return body;
+  }
+  async function reload() {
+    try {
+      const [summary, list] = await Promise.all([request('/metrics'),request('/v1/jobs?limit=30')]);
+      for(const name of ['total','queued','running','succeeded']) el('count-'+name).textContent=summary.jobs[name]||0;
+      const tbody=el('jobs');tbody.replaceChildren();
+      if(!list.jobs.length){ const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=4;td.textContent='暂无任务';tr.append(td);tbody.append(tr);return; }
+      for(const job of list.jobs){
+        const tr=document.createElement('tr'),title=document.createElement('td'),status=document.createElement('td'),attempts=document.createElement('td'),act=document.createElement('td');
+        const link=document.createElement('button'); link.className='secondary tiny';link.textContent=job.id.slice(0,10)+'…';link.onclick=()=>detail(job.id);
+        title.append(link);const small=document.createElement('div');small.className='help';small.textContent=job.prompt.slice(0,68);title.append(small);
+        const badge=document.createElement('span');badge.className='status '+job.status;badge.textContent=job.status;status.append(badge);attempts.textContent=job.attempts;
+        if(['queued','running'].includes(job.status)){ const cancel=document.createElement('button');cancel.className='danger tiny';cancel.textContent='取消';cancel.onclick=async()=>{try{await request('/v1/jobs/'+job.id+'/cancel',{method:'POST'});await reload()}catch(e){notice(e.message)}};act.append(cancel); }
+        tr.append(title,status,attempts,act);tbody.append(tr);
+      }
+      el('connection').textContent='服务在线';
+    }catch(e){el('connection').textContent='请求失败';notice('刷新失败：'+e.message);}
+  }
+  async function detail(id) {
+    try{const j=await request('/v1/jobs/'+id);el('detail').textContent=JSON.stringify(j,null,2)}catch(e){notice(e.message)}
+  }
+  el('refresh').onclick=reload;el('reload').onclick=reload;el('key').addEventListener('change',reload);
+  el('submit').onclick=async()=>{
+    const prompt=el('prompt').value.trim();if(!prompt){notice('请输入 Prompt');return}
+    el('submit').disabled=true;
+    try{
+      const job=await request('/v1/jobs',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()},body:JSON.stringify({prompt})});
+      notice('任务已提交：'+job.id); await detail(job.id); await reload();
+    }catch(e){notice('提交失败：'+e.message)}finally{el('submit').disabled=false}
+  };
+  async function loadGateway() {
+    try {
+      const data=await request('/v1/gateway/backends');
+      el('backend-status').textContent=data.backends.map(b => `${b.id}: ${b.available?'可用':'不可用'} · 并发 ${b.in_flight} · 请求 ${b.total} · 成功 ${b.succeeded} · 失败 ${b.failed} · P95 ${b.p95_latency_ms}ms`).join(' | ');
+    } catch(e) {el('backend-status').textContent='网关未启用或不可用：'+e.message}
+  }
+  el('reload-gateway').onclick=loadGateway;
+  el('chat-send').onclick=async()=>{
+    const prompt=el('chat-prompt').value.trim(), model=el('model-name').value.trim();
+    if (!prompt||!model){el('chat-notice').textContent='请输入模型名和内容';return}
+    el('chat-send').disabled=true;el('chat-output').textContent='';
+    const start=performance.now();
+    try {
+      const streaming=el('chat-stream').checked;
+      const res=await fetch('/v1/chat/completions',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({model,messages:[{role:'user',content:prompt}],stream:streaming})});
+      if(!res.ok){const error=await res.json();throw new Error(error.error?.message || error.error || `HTTP ${res.status}`)}
+      if (!streaming) {
+        const data=await res.json(); el('chat-output').textContent=data.choices?.[0]?.message?.content || JSON.stringify(data);
+      } else {
+        const reader=res.body.getReader(), decoder=new TextDecoder();let buffer='';
+        while(true){const {done,value}=await reader.read();if(done)break;buffer+=decoder.decode(value,{stream:true});
+          const frames=buffer.split('\n\n');buffer=frames.pop();
+          for(const frame of frames){for(const line of frame.split('\n')){if(!line.startsWith('data: '))continue;
+            const raw=line.slice(6);if(raw==='[DONE]')continue;try{const evt=JSON.parse(raw);el('chat-output').textContent+=evt.choices?.[0]?.delta?.content || ''}catch(_){} }
+          }
+        }
+      }
+      el('chat-notice').textContent=`完成 · ${Math.round(performance.now()-start)} ms (浏览器端总耗时)`;
+      await loadGateway();
+    }catch(e){el('chat-notice').textContent='请求失败：'+e.message}
+    finally{el('chat-send').disabled=false}
+  };
+  loadGateway();
+  reload();setInterval(()=>{if(!document.hidden) reload()},5000);
+})();
+</script></body></html>
