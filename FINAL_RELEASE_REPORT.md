@@ -48,7 +48,7 @@
 | `go build -tags mysql ./...` | PASS（修复后，见 §4.1） |
 | `go vet ./...` | PASS |
 | `go vet -tags mysql ./...` | PASS |
-| `go test -count=1 ./...` | PASS — 8 个包（config / gateway / httpapi / provider / rediskit / runner / task + 3 个 cmd 无测试） |
+| `go test -count=1 ./...` | PASS — 7 个有测试的包全部 ok（config / gateway / httpapi / provider / rediskit / runner / task）；另有 4 个无测试文件包（cmd/loadgen、cmd/mockllm、cmd/server、internal/mysqlstore） |
 | `go test -tags mysql -count=1 ./...` | PASS |
 | `gofmt -l ./cmd ./internal` | PASS（无输出） |
 | `go test -count=20 ./internal/task` | PASS — 验证 §4.3 的偶发失败已消除 |
@@ -73,7 +73,7 @@
 | `go vet ./...` / `go vet -tags mysql ./...` | PASS |
 | `go test -count=1 ./...` | PASS |
 | `go test -tags mysql -count=1 ./...` | PASS |
-| **`go test -race -count=1 ./...`** | **PASS** — 8 个包全部通过，含 gateway / httpapi / runner / task 并发路径 |
+| **`go test -race -count=1 ./...`** | **PASS** — 7 个有测试的包全部通过，含 gateway / httpapi / runner / task 并发路径 |
 | `gofmt -l ./cmd ./internal` | PASS |
 
 > 上一轮报告把 race 记为 BLOCKED。本轮在 WSL 用户目录安装官方 Go 工具链后**已实际执行并通过**，该阻塞项关闭。
@@ -89,7 +89,7 @@
 | SSE（`curl -N`，`stream=true`） | PASS — 收到 7 段 `data:` 增量块，最后 `data: [DONE]` |
 | 面板 `GET /` | PASS — 10885 字节 HTML，内联 JS 通过 `node --check` |
 | 认证矩阵 | PASS — 无 Key：`/`、`/healthz`、`/readyz` = 200，`/v1/jobs`、`/metrics` = 401；错误 Key = 401；正确 Key = 200 |
-| 固定窗口限流 | PASS — `RATE_PER_MINUTE=5` 时第 5 次仍 200、第 6 次起 429 |
+| 固定窗口限流 | PASS — `RATE_PER_MINUTE=5`、同一身份（API Key + IP）在窗口内前 5 次 200，第 6 次起 429 |
 
 ### 3.5 静态与供应链检查
 
@@ -207,7 +207,7 @@
 
 ### 5.4 结论与边界
 
-1. **高并发 503 完全符合配置的准入限制**：每档 `HTTP 503 数 == 网关 admission_rejections ÷ 后端数`，脚本逐档输出 `reconciled=True`。把每后端上限从 4 降到 2，同并发下 503 由 976 变为 984、成功吞吐由 186 降到 83 —— 归因由对照实验确认，不是巧合。
+1. **高并发 503 完全符合配置的准入限制**：每档 `HTTP 503 数 == 网关 admission_rejections ÷ 后端数`，脚本逐档输出 `reconciled=True`。把每后端上限从 4 降到 2（名额 8→4）后，**同样 `-c 8`** 的同一工作负载从 `1000/0`（191.37 req/s）变成 `16/984`（82.89 req/s）—— 归因由对照实验确认，不是巧合。
 2. **成功吞吐与完成吞吐必须分开报**：c=16 时两者相差 41 倍。任何只引用"完成吞吐"的表述都会高估容量，这正是本轮修正的报告缺陷。
 3. **容量自洽**：8 个名额 ÷ 约 45 ms 平均上游延迟 ≈ 178 req/s 理论值，实测饱和点 191.37 req/s。
 4. **网关自身开销**：c=1 平均端到端 46.65 ms vs 注入延迟均值 45 ms ⇒ 约 1.6 ms/请求（估算，含客户端开销）。
@@ -261,7 +261,7 @@
 ## 9. 三条可用于简历的技术亮点（均可在仓库中验证）
 
 1. **异步任务一致性设计**：用文件快照（临时文件 + `rename` 原子替换）与 MySQL 事务 + `SELECT … FOR UPDATE SKIP LOCKED` 两套存储实现同一套 `Repository` 接口，统一提供幂等提交、指数退避重试、运行中取消与崩溃后 `running → queued` 重入队，并用 attempt 号丢弃过期 worker 的写入（`ErrStaleAttempt`），明确选择 at-least-once 语义而非虚假的 exactly-once。
-2. **LLM 网关的准入与故障隔离**：实现 least-inflight 路由 + 每后端并发上限 + 被动熔断（阈值 + 冷却）与 SSE 逐块透传；用 5,000 请求实测把过载行为量化到"503 数 = 超出准入名额数"，并用把每后端上限从 4 降到 2 的对照实验（成功吞吐 186 → 83 req/s）证明瓶颈来源，而不是只给一个吞吐数字。
+2. **LLM 网关的准入与故障隔离**：实现 least-inflight 路由 + 每后端并发上限 + 被动熔断（阈值 + 冷却）与 SSE 逐块透传；用 5,000 请求实测把过载行为量化到"503 数 = 超出准入名额数"，并用**同一 `-c 8` 下把每后端上限从 4 降到 2** 的对照实验（成功吞吐 191.37 → 82.89 req/s，成功数 1000/1000 → 16/984）证明瓶颈来源，而不是只给一个吞吐数字。
 3. **可复现的工程验证**：补齐 `go.sum` 并用 `GOPROXY=off` 离线构建证明依赖图完全锁定；在 WSL Ubuntu 22.04 + GCC 11.4 下跑通 `go test -race`（此前被记录为阻塞项）；同时用 Go 1.23.12 复验 CI 声明的版本，避免"CI 写法与实际工具链不符"。
 
 ---

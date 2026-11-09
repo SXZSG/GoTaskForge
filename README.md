@@ -18,7 +18,7 @@
 | 项目 | 状态 | 说明 |
 |---|---|---|
 | `go build ./...` / `go vet ./...` | ✅ 通过 | Go 1.23.12 与 1.27.3，Windows 与 WSL Linux |
-| `go test -count=1 ./...` | ✅ 通过 | 8 个包，含状态机、网关、API、Provider、Runner |
+| `go test -count=1 ./...` | ✅ 通过 | 7 个有测试的包（config/gateway/httpapi/provider/rediskit/runner/task） |
 | `go test -race -count=1 ./...` | ✅ 通过 | WSL Ubuntu 22.04 + GCC 11.4（race 需要 CGO/C 编译器） |
 | `go build -tags mysql` / `go vet -tags mysql` | ✅ 通过 | 仅编译，未连接真实 MySQL |
 | `go mod verify` + `GOPROXY=off` 离线构建 | ✅ 通过 | `go.sum` 已提交，依赖图完全锁定 |
@@ -207,7 +207,7 @@ Windows 一键本地检查：`.\scripts\test_local.ps1`。
 
 - 8 个准入名额 + 约 45 ms 平均上游延迟 ≈ 180 req/s 的理论容量，实测饱和点 `-c 8` 为 **191.37 req/s（1000/1000 成功）**，与高并发档的成功吞吐一致 → 数据自洽。
 - 高并发的 503 **精确等于**超出名额的请求数：脚本逐档比对 `HTTP 503 数` 与网关 `admission_rejections` 计数（`reconciled=True`）。
-- 对照实验：把每后端上限从 4 降到 2（名额 8→4），同并发下成功吞吐从 186 降到 **82.89 req/s**、503 增加 → 瓶颈确实来自配置的准入限制，而不是随机错误。
+- 对照实验：把每后端上限从 4 降到 2（名额 8→4），**同样 `-c 8`** 下成功请求从 1000/1000 变成 16/984、成功吞吐从 **191.37 降到 82.89 req/s**、503 从 0 变成 984 → 瓶颈确实来自配置的准入限制，而不是随机错误。
 - 顺序请求平均端到端 46.65 ms vs 注入延迟均值 45 ms ⇒ 网关自身开销约 **1.6 ms/请求**（估算，含客户端开销）。
 
 > 这些数字**不是** GPU 吞吐、Token/s、TTFT、生产 QPS 或 SLA。要测真实模型，需要固定模型/硬件/精度/输入输出长度/预热/并发后单独实验。
